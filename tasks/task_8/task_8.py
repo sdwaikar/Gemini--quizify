@@ -1,9 +1,14 @@
 import streamlit as st
-from langchain_google_vertexai import VertexAI
-from langchain_core.prompts import PromptTemplate
 import os
 import sys
+import json
 sys.path.append(os.path.abspath('../../'))
+from tasks.task_3.task_3 import DocumentProcessor
+from tasks.task_4.task_4 import EmbeddingClient
+from tasks.task_5.task_5 import ChromaCollectionCreator
+
+from langchain_core.prompts import PromptTemplate
+from langchain_google_vertexai import VertexAI
 
 class QuizGenerator:
     def __init__(self, topic=None, num_questions=1, vectorstore=None):
@@ -11,9 +16,11 @@ class QuizGenerator:
             self.topic = "General Knowledge"
         else:
             self.topic = topic
-        
+
         if num_questions > 10:
             raise ValueError("Number of questions cannot exceed 10.")
+        
+        self.question_bank = []
         self.num_questions = num_questions
         self.vectorstore = vectorstore
         self.llm = None
@@ -63,8 +70,39 @@ class QuizGenerator:
 
         chain = setup_and_retrieval | prompt_template | self.llm
         response = chain.invoke(self.topic)
+
         return response
-  
+
+    def generate_quiz(self) -> list:
+        self.question_bank = []
+        for _ in range(self.num_questions):
+            question_str = self.generate_question_with_vectorstore()
+            try:
+                question = json.loads(question_str)
+            except json.JSONDecodeError:
+                print("Failed to decode question JSON.")
+                continue
+
+            if self.validate_question(question):
+                print("Successfully generated a unique question.")
+                self.question_bank.append(question)
+            else:
+                print("Duplicated or invalid question detected.")
+
+        return self.question_bank
+    
+    def validate_question(self, question: dict) -> bool:
+        question_text = question['question']
+        if question_text is None:
+            return False
+        # Step 7: Iterate over the existing questions in `question_bank` and compare their texts to the current question's text.
+        for existing_question in self.question_bank:
+            # Step 8: If a duplicate is found, return False to indicate the question is not unique.
+            if existing_question['question'] == question_text:
+                return False
+        # Step 8: If no duplicates are found, return True, indicating the question is unique and can be added to the quiz.
+        return True
+
 if __name__ == "__main__":
     from tasks.task_3.task_3 import DocumentProcessor
     from tasks.task_4.task_4 import EmbeddingClient
@@ -97,10 +135,12 @@ if __name__ == "__main__":
                 chroma_creator.create_chroma_collection()
                 st.write(topic_input)
                 generator = QuizGenerator(topic_input, number_input, chroma_creator)
-                question = generator.generate_question_with_vectorstore()
+                question_bank = generator.generate_quiz()
+                question = question_bank[0]
     
     if question:
         screen.empty()
         with st.container():
-            st.header("Generated Quiz: ")
-            st.write(question)
+            st.header("Generated Quiz Question: ")
+            for question in question_bank:
+                st.write(question)
